@@ -72,7 +72,7 @@ fun SpectrumPlot(
     onSlopeChange: ((Float) -> Unit)? = null,
 ) {
     val textMeasurer = rememberTextMeasurer(cacheSize = 32)
-    val density = LocalDensity.current
+    val localDensity = LocalDensity.current
     val labelStyle = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp)
     val currentSlope by rememberUpdatedState(slope)
     val onChange by rememberUpdatedState(onSlopeChange)
@@ -86,7 +86,7 @@ fun SpectrumPlot(
                 var position = down.position
                 down.consume()
                 while (true) {
-                    val plot = plotArea(Size(size.width.toFloat(), size.height.toFloat()), density)
+                    val plot = plotArea(Size(size.width.toFloat(), size.height.toFloat()), localDensity)
                     val raw = slopeAt(position, plot)
                     // Only report moves that change the rounded, snapped slope.
                     if (raw != null && Slopes.snap(raw) != currentSlope) onChange?.invoke(raw)
@@ -224,7 +224,7 @@ private fun DrawScope.drawFrequencyLabels(
     for ((hz, text) in LABELED_HZ) {
         val layout = textMeasurer.measure(text, style)
         val x = (xFor(hz, plot) - layout.size.width / 2f)
-            .coerceIn(plot.left, plot.right - layout.size.width)
+            .coerceIn(plot.left, maxOf(plot.left, plot.right - layout.size.width))
         drawText(
             textLayoutResult = layout,
             color = XenoiseColors.Faint,

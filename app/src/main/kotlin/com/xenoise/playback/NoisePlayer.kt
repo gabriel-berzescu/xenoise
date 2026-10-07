@@ -55,6 +55,8 @@ class NoisePlayer(
 
     private var selected: Noise = library.find(library.selectedId) ?: Presets.Pink
     private var preview: Noise? = null
+    private var previewOwner: String? = null
+    private var playingBeforePreview = false
 
     private var timerJob: Job? = null
     private var timerFading = false
@@ -152,19 +154,31 @@ class NoisePlayer(
         }
     }
 
-    /** Lets the editor take over the sound with its unsaved draft. */
-    fun previewDraft(draft: Noise) {
+    /**
+     * Lets an editor take over the sound with its unsaved draft. [owner] identifies one
+     * opening of the editor, so a closing editor can never end a newer one's preview.
+     */
+    fun previewDraft(owner: String, draft: Noise) {
+        if (previewOwner != owner) {
+            if (previewOwner == null) playingBeforePreview = _state.value.isPlaying
+            previewOwner = owner
+        }
         preview = draft
         engine?.setSlope(draft.slope)
         _state.update { it.copy(noise = draft, isPreviewing = true) }
     }
 
-    /** Hands the sound back to the selected noise when the editor closes. */
-    fun endPreview() {
-        if (preview == null) return
+    /**
+     * Hands the sound back to the selected noise when the editor closes. If the sound was
+     * only started from the editor and the draft is not being kept, playback stops too.
+     */
+    fun endPreview(owner: String, keepPlaying: Boolean = false) {
+        if (previewOwner != owner) return
+        previewOwner = null
         preview = null
         engine?.setSlope(selected.slope)
         _state.update { it.copy(noise = selected, isPreviewing = false) }
+        if (!keepPlaying && !playingBeforePreview && _state.value.isPlaying) pause()
     }
 
     fun setVolume(volume: Float, persist: Boolean) {
@@ -215,16 +229,20 @@ class NoisePlayer(
                 abandonFocus()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                // A call or a voice assistant. Pause and come back afterwards.
+                // A call or a voice assistant. Pause and come back afterwards. Focus must be
+                // asked for again before playing, so a tap on play cannot sound over a call.
+                hasFocus = false
                 if (_state.value.isPlaying) {
                     pause()
                     resumeOnFocusGain = true
                 }
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
+                hasFocus = true
                 if (resumeOnFocusGain) {
                     resumeOnFocusGain = false
-                    play()
+                    // If the sleep timer started its fade meanwhile, let it finish in silence.
+                    if (!timerFading) play()
                 }
             }
             // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: the system lowers our volume by itself.
@@ -232,10 +250,9 @@ class NoisePlayer(
     }
 
     private fun abandonFocus() {
-        if (hasFocus) {
-            audioManager.abandonAudioFocusRequest(focusRequest)
-            hasFocus = false
-        }
+        // Unconditional: after a transient loss the request is still registered.
+        audioManager.abandonAudioFocusRequest(focusRequest)
+        hasFocus = false
     }
 
     private fun onEngineError(error: Throwable) {

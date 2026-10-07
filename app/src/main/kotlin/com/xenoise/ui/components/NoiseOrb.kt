@@ -1,11 +1,8 @@
 package com.xenoise.ui.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -77,12 +74,19 @@ fun NoiseOrb(
     }
 
     val activity = animateFloatAsState(if (playing) 1f else 0f, tween(900), label = "orbActivity")
-    val breath = rememberInfiniteTransition(label = "orbBreath").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(4_800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "breath",
-    )
+
+    // A slow breath while playing. When paused it settles and stops, so nothing redraws.
+    val breath = remember { Animatable(0f) }
+    LaunchedEffect(playing) {
+        if (playing) {
+            while (true) {
+                breath.animateTo(1f, tween(2_400, easing = FastOutSlowInEasing))
+                breath.animateTo(0f, tween(2_400, easing = FastOutSlowInEasing))
+            }
+        } else {
+            breath.animateTo(0f, tween(900))
+        }
+    }
     val currentColor = rememberUpdatedState(color)
 
     Box(modifier, contentAlignment = Alignment.Center) {
@@ -91,7 +95,7 @@ fun NoiseOrb(
                 .fillMaxSize()
                 .drawWithCache {
                     val radius = size.minDimension * ORB_RADIUS
-                    val c = center
+                    val c = Offset(size.width / 2f, size.height / 2f)
                     val grainRadius = radius * 0.96f
                     val pools = List(GRAIN_FRAMES) { i -> grainPoints(i, grain.count, c, grainRadius) }
                     val dot = grain.dotDp.dp.toPx()

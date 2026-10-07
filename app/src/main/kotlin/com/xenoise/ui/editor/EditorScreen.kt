@@ -1,5 +1,8 @@
 package com.xenoise.ui.editor
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -53,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -63,18 +67,22 @@ import com.xenoise.model.Slopes
 import com.xenoise.ui.components.SpectrumPlot
 import com.xenoise.ui.components.XenoiseIcons
 import com.xenoise.ui.theme.XenoiseColors
-import java.util.UUID
 
 /**
  * Shape a custom noise by tilting its line. The sound follows the line live: while this
  * screen is open, the player previews the draft instead of the selected noise.
  *
- * @param existing the saved noise being edited, or null to create a new one.
+ * @param noiseId id of the noise being edited, or the id a new noise will be saved under.
+ * @param existing the saved noise being edited, or null for a new one.
+ * @param active false while the screen animates away; it then stops driving the preview.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(
+    noiseId: String,
     existing: Noise?,
+    isNew: Boolean,
+    active: Boolean,
     defaultName: String,
     isPlaying: Boolean,
     onPreview: (Noise) -> Unit,
@@ -84,21 +92,29 @@ fun EditorScreen(
     onDelete: (Noise) -> Unit,
     onClose: () -> Unit,
 ) {
-    // What the screen opened with, so a delete does not retitle it during the exit animation.
+    // What the screen opened with, so a delete does not change it during the exit animation.
     val original = remember { existing }
-    val id = rememberSaveable { existing?.id ?: UUID.randomUUID().toString() }
+    // Captured once: after a save the library's next default name changes.
+    val fallbackName = rememberSaveable { defaultName }
     var name by rememberSaveable { mutableStateOf(existing?.name ?: defaultName) }
     var slope by rememberSaveable { mutableFloatStateOf(existing?.slope ?: Presets.Pink.slope) }
     var confirmDelete by remember { mutableStateOf(false) }
-    val draft = Noise(id = id, name = name.trim().ifEmpty { defaultName }, slope = slope)
+    val draft = Noise(id = noiseId, name = name.trim().ifEmpty { fallbackName }, slope = slope)
     val color by animateColorAsState(Color(NoiseColors.forSlope(slope)), tween(250), label = "draftColor")
     val haptics = LocalHapticFeedback.current
 
+    // Closing normally ends the preview explicitly. This is the safety net for other exits,
+    // skipped on rotation so the sound does not dip while the screen is rebuilt.
+    val activity = LocalContext.current.findActivity()
     val endPreview by rememberUpdatedState(onEndPreview)
     DisposableEffect(Unit) {
-        onDispose { endPreview() }
+        onDispose {
+            if (activity?.isChangingConfigurations != true) endPreview()
+        }
     }
-    LaunchedEffect(draft) { onPreview(draft) }
+    LaunchedEffect(draft, active) {
+        if (active) onPreview(draft)
+    }
 
     fun setSlope(value: Float) {
         val next = Slopes.snap(value)
@@ -111,7 +127,7 @@ fun EditorScreen(
         containerColor = XenoiseColors.Ink,
         topBar = {
             TopAppBar(
-                title = { Text(if (original == null) "New noise" else "Edit noise") },
+                title = { Text(if (isNew) "New noise" else "Edit noise") },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
@@ -144,7 +160,7 @@ fun EditorScreen(
             SpectrumPlot(
                 slope = slope,
                 color = color,
-                onSlopeChange = ::setSlope,
+                onSlopeChange = { setSlope(it) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(300.dp),
@@ -186,7 +202,7 @@ fun EditorScreen(
             Spacer(Modifier.height(12.dp))
             Slider(
                 value = slope,
-                onValueChange = ::setSlope,
+                onValueChange = { setSlope(it) },
                 valueRange = Slopes.MIN..Slopes.MAX,
                 colors = SliderDefaults.colors(
                     thumbColor = color,
@@ -258,6 +274,12 @@ fun EditorScreen(
 }
 
 private const val MAX_NAME_LENGTH = 32
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 @Composable
 private fun ListenButton(playing: Boolean, color: Color, onClick: () -> Unit) {

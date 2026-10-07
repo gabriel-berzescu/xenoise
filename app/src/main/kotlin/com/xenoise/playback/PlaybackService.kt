@@ -31,6 +31,8 @@ import com.xenoise.model.NoiseColors
 import com.xenoise.model.Slopes
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -99,7 +101,13 @@ class PlaybackService : Service() {
             player.state
                 .map { NotificationModel.from(it) }
                 .distinctUntilChanged()
-                .collect { render(it) }
+                .conflate()
+                .collect {
+                    render(it)
+                    // Android drops notification updates past a few per second, and a dropped
+                    // last update would leave the notification stale. Pace them instead.
+                    delay(NOTIFICATION_MIN_INTERVAL_MS)
+                }
         }
     }
 
@@ -153,6 +161,8 @@ class PlaybackService : Service() {
     }
 
     private fun goForeground(model: NotificationModel, notification: Notification = buildNotification(model)) {
+        // Android 13+ builds the media controls from the session, so fill it in first.
+        if (model.isSessionActive) updateSession(model)
         try {
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
@@ -341,7 +351,7 @@ class PlaybackService : Service() {
                 isPlaying = state.isPlaying,
                 isPreviewing = state.isPreviewing,
                 title = state.noise.displayName,
-                slope = (state.noise.slope * 2f).roundToInt() / 2f,
+                slope = state.noise.slope,
                 artSlope = state.noise.slope.roundToInt().toFloat(),
                 timerEndsAtElapsedMs = state.timer?.endsAtElapsedMs,
             )
@@ -352,6 +362,7 @@ class PlaybackService : Service() {
         private const val TAG = "PlaybackService"
         private const val CHANNEL_ID = "playback"
         private const val NOTIFICATION_ID = 1
+        private const val NOTIFICATION_MIN_INTERVAL_MS = 250L
         private const val ACTION_START = "com.xenoise.action.START"
         private const val ACTION_TOGGLE = "com.xenoise.action.TOGGLE"
         private const val ACTION_STOP = "com.xenoise.action.STOP"

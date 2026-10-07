@@ -24,16 +24,33 @@ import com.xenoise.data.NoiseLibrary
 import com.xenoise.playback.NoisePlayer
 import com.xenoise.ui.editor.EditorScreen
 import com.xenoise.ui.home.HomeScreen
+import java.util.UUID
 
-/** Route value for the editor when it creates a new noise rather than editing one. */
-private const val NEW_NOISE = "new"
+/**
+ * One opening of the editor, encoded as a string so it survives rotation. The key is fresh
+ * every time, so an editor that is still animating out is never reused by the next opening.
+ */
+private data class EditorRoute(val noiseId: String, val isNew: Boolean) {
+    companion object {
+        fun forNew(): String = encode(UUID.randomUUID().toString(), isNew = true)
+        fun forExisting(noiseId: String): String = encode(noiseId, isNew = false)
+
+        private fun encode(noiseId: String, isNew: Boolean): String =
+            listOf(if (isNew) "new" else "edit", noiseId, UUID.randomUUID().toString()).joinToString("|")
+
+        fun decode(route: String): EditorRoute {
+            val parts = route.split("|")
+            return EditorRoute(noiseId = parts[1], isNew = parts[0] == "new")
+        }
+    }
+}
 
 @Composable
 fun XenoiseRoot(player: NoisePlayer, library: NoiseLibrary) {
     val state by player.state.collectAsStateWithLifecycle()
     val customNoises by library.customNoises.collectAsStateWithLifecycle()
 
-    // null shows the home screen; otherwise the editor for NEW_NOISE or a saved noise id.
+    // null shows the home screen; otherwise an encoded EditorRoute.
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
 
     val askForNotifications = rememberNotificationPermissionAsker()
@@ -41,11 +58,16 @@ fun XenoiseRoot(player: NoisePlayer, library: NoiseLibrary) {
         askForNotifications()
         player.play()
     }
+    // Read the player directly: Compose state can lag a frame behind a quick double tap.
     val togglePlay = {
-        if (state.isPlaying) player.pause() else play()
+        if (player.state.value.isPlaying) player.pause() else play()
+    }
+    val closeEditor = { keepPlaying: Boolean ->
+        editing?.let { player.endPreview(it, keepPlaying) }
+        editing = null
     }
 
-    BackHandler(enabled = editing != null) { editing = null }
+    BackHandler(enabled = editing != null) { closeEditor(false) }
 
     AnimatedContent(
         targetState = editing,
@@ -65,12 +87,12 @@ fun XenoiseRoot(player: NoisePlayer, library: NoiseLibrary) {
                 onTogglePlay = togglePlay,
                 onPlayNoise = { noise ->
                     player.select(noise)
-                    if (!state.isPlaying) play()
+                    if (!player.state.value.isPlaying) play()
                 },
                 onVolumeChange = { player.setVolume(it, persist = false) },
-                onVolumeChangeFinished = { player.setVolume(state.volume, persist = true) },
-                onEditNoise = { editing = it.id },
-                onNewNoise = { editing = NEW_NOISE },
+                onVolumeChangeFinished = { player.setVolume(player.state.value.volume, persist = true) },
+                onEditNoise = { editing = EditorRoute.forExisting(it.id) },
+                onNewNoise = { editing = EditorRoute.forNew() },
                 onStartTimer = { durationMs ->
                     askForNotifications()
                     player.startTimer(durationMs)
@@ -78,24 +100,33 @@ fun XenoiseRoot(player: NoisePlayer, library: NoiseLibrary) {
                 onCancelTimer = player::cancelTimer,
             )
         } else {
-            val existing = customNoises.firstOrNull { it.id == target }
+            val route = EditorRoute.decode(target)
+            // Only the editor on screen may act; one that is animating out ignores taps.
+            val isCurrent = { editing == target }
             EditorScreen(
-                existing = existing,
+                noiseId = route.noiseId,
+                existing = if (route.isNew) null else customNoises.firstOrNull { it.id == route.noiseId },
+                isNew = route.isNew,
+                active = editing == target,
                 defaultName = library.nextDefaultName(),
                 isPlaying = state.isPlaying,
-                onPreview = player::previewDraft,
-                onEndPreview = player::endPreview,
-                onTogglePlay = togglePlay,
+                onPreview = { draft -> if (isCurrent()) player.previewDraft(target, draft) },
+                onEndPreview = { player.endPreview(target) },
+                onTogglePlay = { if (isCurrent()) togglePlay() },
                 onSave = { draft ->
-                    library.save(draft)
-                    library.find(draft.id)?.let(player::select)
-                    editing = null
+                    if (isCurrent()) {
+                        library.save(draft)
+                        library.find(draft.id)?.let(player::select)
+                        closeEditor(true)
+                    }
                 },
                 onDelete = { noise ->
-                    library.delete(noise.id)
-                    editing = null
+                    if (isCurrent()) {
+                        closeEditor(false)
+                        library.delete(noise.id)
+                    }
                 },
-                onClose = { editing = null },
+                onClose = { if (isCurrent()) closeEditor(false) },
             )
         }
     }

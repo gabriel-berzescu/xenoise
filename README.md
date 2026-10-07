@@ -46,6 +46,9 @@ Connect the phone over USB with USB debugging on, then:
 Requirements: Android 8.0 (API 26) or newer on the phone, JDK 17 and the Android SDK on the
 computer. The debug build installs as `com.xenoise.debug`.
 
+If Gradle says "SDK location not found", point it at the SDK. Copy `local.properties` from
+another Android project, or set `ANDROID_HOME`, or open the project once in Android Studio.
+
 ## How the sound is made
 
 `NoiseSynth` builds the noise in the frequency domain. Every 43 ms it fills a spectrum

@@ -7,6 +7,8 @@ android-bedrock-loom project: AGP 8.7.2, Kotlin 2.0.21, Gradle 8.9, compileSdk 3
 
 - Install on the USB-connected phone: `./gradlew installDebug`
 - Unit tests: `./gradlew testDebugUnitTest`
+- "SDK location not found" on a fresh checkout: `cp ../android-bedrock-loom/local.properties .`
+  or set `ANDROID_HOME`.
 
 ## Notes
 
