@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Xenoise</string>
+
+    <string name="channel_playback">Playback</string>
+    <string name="channel_playback_description">Shows what is playing, with play, pause and stop.</string>
+
+    <string name="action_play">Play</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_stop">Stop</string>
+
+    <string name="notification_slope">%1$s dB per octave</string>
+    <string name="notification_editing">Editing · %1$s dB per octave</string>
+    <string name="notification_timer">Sleep timer · stops at %1$s</string>
+</resources>
