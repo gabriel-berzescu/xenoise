@@ -1,9 +1,11 @@
 package com.xenoise.ui.theme
 
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -59,9 +61,9 @@ private val XenoiseTypography = BaseTypography.copy(
 
 @Composable
 fun XenoiseTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = ColorScheme,
-        typography = XenoiseTypography,
-        content = content,
-    )
+    MaterialTheme(colorScheme = ColorScheme, typography = XenoiseTypography) {
+        // Screens draw their own backgrounds rather than sitting in a Surface, so the default
+        // content color would otherwise be Compose's fallback: black on our night palette.
+        CompositionLocalProvider(LocalContentColor provides ColorScheme.onBackground, content = content)
+    }
 }

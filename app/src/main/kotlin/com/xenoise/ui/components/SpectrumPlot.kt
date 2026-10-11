@@ -221,10 +221,16 @@ private fun DrawScope.drawFrequencyLabels(
     textMeasurer: TextMeasurer,
     style: TextStyle,
 ) {
+    // Neighbouring labels sit one octave apart at the top end, which is a tenth of the width:
+    // on a phone "10k" and "20k" collide. Skip any label that would overlap the previous one.
+    val gap = 6.dp.toPx()
+    var lastRight = Float.NEGATIVE_INFINITY
     for ((hz, text) in LABELED_HZ) {
         val layout = textMeasurer.measure(text, style)
         val x = (xFor(hz, plot) - layout.size.width / 2f)
             .coerceIn(plot.left, maxOf(plot.left, plot.right - layout.size.width))
+        if (x < lastRight + gap) continue
+        lastRight = x + layout.size.width
         drawText(
             textLayoutResult = layout,
             color = XenoiseColors.Faint,
